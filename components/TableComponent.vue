@@ -32,7 +32,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(item) in filteredData" class="border-b dark:border-gray-700">
+              <tr v-for="item in filteredData" class="border-b dark:border-gray-700">
                 <template v-for="(col, indexCol) in cols" :key="col.key">
                   <th v-if="indexCol === 0" scope="row"
                     class="px-4 py-3 font-medium text-center text-gray-900 whitespace-nowrap dark:text-white">{{

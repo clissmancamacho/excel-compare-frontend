@@ -1,8 +1,8 @@
 <template>
     <section>
-        <div>
+        <CardBox class="mb-6" has-table>
             <FileUpload />
-        </div>
+        </CardBox>
         <div v-if="data">
             <CardBox class="mb-6" has-table>
                 <TableComponent :data="data" :cols="cols" :loading="loading" />
