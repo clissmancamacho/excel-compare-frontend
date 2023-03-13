@@ -12,11 +12,15 @@ export const checkDataStore = defineStore("checkData", () => {
     formData.append("file", file)
     formData.append("name", file.name)
     try {
-      const response = await axios.post(`/api/checkfile`, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      })
+      const response = await axios.post(
+        `https://imaginative-conkies-4a8f20.netlify.app/api/checkfile`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      )
       data.value = [...response.data]
     } catch (error) {
       console.log(error)
