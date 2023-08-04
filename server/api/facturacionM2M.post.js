@@ -1,6 +1,12 @@
 import ExcelJS from "exceljs"
 import { readFiles } from "h3-formidable"
 
+const templateFile = {
+  filepath: "server/template/plantilla.xlsx",
+}
+
+let tasaSol = 0
+let tasaDolar = 0
 export default defineEventHandler(async (event) => {
   // with fields
   const { fields, files } = await readFiles(event, {
@@ -8,7 +14,21 @@ export default defineEventHandler(async (event) => {
     // other formidable options here
   })
 
+  const S = fields.S[0]
+  const USD = fields.USD[0]
+  const fechaFactura = fields.fechaFactura[0]
+  const fechaVencimiento = fields.fechaVencimiento[0]
+  const consumoMes = fields.consumoMes[0]
+
   try {
+    if (!S || !USD || !fechaFactura || !fechaVencimiento || !consumoMes) {
+      throw new Error(
+        "No se encontraron los campos S (tasa soles) o USD (tasa dolár)"
+      )
+    }
+    tasaSol = parseFloat(S)
+    tasaDolar = parseFloat(USD)
+
     const companies = {}
     const worksheets = await getWorksheetsFromFiles(files)
     const data2 = buildData2(worksheets.data2)
@@ -17,7 +37,7 @@ export default defineEventHandler(async (event) => {
     const dataDiscounts = buildDataDescuentos(worksheets.data4)
 
     worksheets.data1.eachRow(function (row, rowNumber) {
-      if ([1, 2, 3].includes(rowNumber)) {
+      if ([1].includes(rowNumber)) {
         return
       }
       const values = row.values
@@ -40,7 +60,11 @@ export default defineEventHandler(async (event) => {
         objToPush.totalChargeSMS +
         objToPush.totalChargeVoice
 
-      if (objToPush.country === "Chile (2)" && objToPush.currency !== "CLP") {
+      if (objToPush.country !== "Chile (2)") {
+        return
+      }
+
+      if (objToPush.currency !== "CLP") {
         objToPush = convertCurrency(objToPush, objToPush.currency)
       }
 
@@ -51,6 +75,7 @@ export default defineEventHandler(async (event) => {
       if (aditionalData2) {
         objToPush = { ...objToPush, ...aditionalData2 }
       }
+
       if (objToPush.facturableType !== "Facturable Masivo") {
         return
       }
@@ -59,19 +84,24 @@ export default defineEventHandler(async (event) => {
       }
       if (extraCharges) {
         if (objToPush.currency !== extraCharges.currency) {
-          const currencyRate = getCurrencyRate(objToPush.currency)
+          const currencyRate = getCurrencyRate(extraCharges.currency)
           extraCharges.value = customRound(extraCharges.value * currencyRate)
         }
-        objToPush["totalCharge"] = objToPush.totalCharge + extraCharges.value
+        objToPush["extraCharge"] = extraCharges.value
       }
       if (discount) {
         objToPush["discount"] = discount.value
       }
       pushKeyOrAddToExistingKey(companies, objToPush)
     })
-    // debugger
 
-    return response
+    await writeRowsInTemplateFile(
+      companies,
+      fechaFactura,
+      fechaVencimiento,
+      consumoMes
+    )
+    return companies
   } catch (error) {
     return {
       error: error.message,
@@ -102,18 +132,26 @@ const getWorksheetNameByData = (index) => {
 const pushKeyOrAddToExistingKey = (companies, objToPush) => {
   const objInCompanies = companies[objToPush.companyId]
   if (objInCompanies) {
-    if (objToPush.currency !== objInCompanies.currency) {
+    /*  if (objToPush.currency !== objInCompanies.currency) {
       objToPush = convertCurrency(objToPush, objInCompanies.currency)
-    }
-    objInCompanies.totalCharge += objToPush.totalCharge
-    objInCompanies.totalChargePlan += objToPush.totalChargePlan
-    objInCompanies.totalChargeOverconsumption +=
+    } */
+    objInCompanies.totalCharge += customRound(objToPush.totalCharge)
+    objInCompanies.totalChargePlan += customRound(objToPush.totalChargePlan)
+    objInCompanies.totalChargeOverconsumption += customRound(
       objToPush.totalChargeOverconsumption
-    objInCompanies.totalChargeSMS += objToPush.totalChargeSMS
-    objInCompanies.totalChargeVoice += objToPush.totalChargeVoice
+    )
+    objInCompanies.totalChargeSMS += customRound(objToPush.totalChargeSMS)
+    objInCompanies.totalChargeVoice += customRound(objToPush.totalChargeVoice)
+
+    if (!objInCompanies.extraCharge && objToPush.extraCharge) {
+      objInCompanies.totalCharge += customRound(objToPush.extraCharges)
+    }
 
     companies[objToPush.companyId] = objInCompanies
   } else {
+    if (objToPush.extraCharge) {
+      objToPush.totalCharge += customRound(objToPush.extraCharge)
+    }
     companies[objToPush.companyId] = objToPush
   }
 }
@@ -134,15 +172,15 @@ const convertCurrency = (objToPush, currency) => {
   objToPush.totalChargeVoice = customRound(
     objToPush.totalChargeVoice * currencyRate
   )
-  objToPush.currency = currency
+  objToPush.currency = "CLP"
   return objToPush
 }
 
 const getCurrencyRate = (currency) => {
   const currencies = {
     CLP: 1,
-    S: 220.68,
-    USD: 801.66,
+    S: tasaSol,
+    USD: tasaDolar,
   }
   return currencies[currency]
 }
@@ -236,4 +274,38 @@ const buildDataDescuentos = (data4) => {
 
 const customRound = (value, decimals = 2) => {
   return parseFloat(value.toFixed(decimals))
+}
+
+const writeRowsInTemplateFile = async (
+  companies,
+  fechaFactura,
+  fechaVencimiento,
+  consumoMes
+) => {
+  const templateWorkbook = new ExcelJS.Workbook()
+  await templateWorkbook.xlsx.readFile(templateFile.filepath)
+  const template = templateWorkbook.getWorksheet("Hoja1")
+
+  const keys = Object.keys(companies)
+  for await (const key of keys) {
+    const company = companies[key]
+    const rowToWrite = [
+      company.showName || company.fantasyName || company.companyName,
+      company.odooId,
+      fechaFactura,
+      fechaVencimiento,
+      "Facturas de cliente",
+      "CLP",
+      "__export__.product_product_725_194cd9a3",
+      consumoMes,
+      1,
+      company.totalCharge,
+      "IVA 19% Vta",
+      company?.discount ? company.discount : 0,
+      "Conectividad Gestionada",
+      "Servicios de Conectividad Gestionada",
+    ]
+    template.addRow(rowToWrite)
+  }
+  await templateWorkbook.xlsx.writeFile("server/template/facturacion.xlsx")
 }

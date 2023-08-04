@@ -8,13 +8,34 @@
         "method": "POST",
         "sortNum": 0,
         "created": "2023-07-28T18:29:09.237Z",
-        "modified": "2023-07-28T19:35:20.141Z",
+        "modified": "2023-08-04T00:34:21.193Z",
         "headers": [],
         "params": [],
         "body": {
             "type": "formdata",
             "raw": "",
-            "form": [],
+            "form": [
+                {
+                    "name": "S",
+                    "value": "220.68"
+                },
+                {
+                    "name": "USD",
+                    "value": "801.66"
+                },
+                {
+                    "name": "fechaFactura",
+                    "value": "2/6/23"
+                },
+                {
+                    "name": "fechaVencimiento",
+                    "value": "12/6/23"
+                },
+                {
+                    "name": "consumoMes",
+                    "value": "Consumo mayo 2023"
+                }
+            ],
             "files": [
                 {
                     "name": "file1",
@@ -22,7 +43,7 @@
                 },
                 {
                     "name": "file2",
-                    "value": "../../../../Downloads/DATA-2-ID.xlsx"
+                    "value": "../../../../Downloads/data2.xlsx"
                 },
                 {
                     "name": "file3",
