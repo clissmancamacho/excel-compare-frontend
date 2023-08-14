@@ -1,0 +1,75 @@
+{
+    "_id": "cc3d4068-c068-41f3-8263-3407b631f4b8",
+    "colName": "M2M",
+    "created": "2023-08-14T20:06:51.680Z",
+    "sortNum": 10000,
+    "folders": [],
+    "requests": [
+        {
+            "_id": "397df04a-6539-4ec7-b4af-cfa8027a82c8",
+            "colId": "cc3d4068-c068-41f3-8263-3407b631f4b8",
+            "containerId": "",
+            "name": "http://localhost:3000/api/facturacionM2M",
+            "url": "http://localhost:3000/api/facturacionM2M",
+            "method": "POST",
+            "sortNum": 10000,
+            "created": "2023-08-14T20:06:51.682Z",
+            "modified": "2023-08-14T20:06:51.682Z",
+            "headers": [],
+            "params": [],
+            "body": {
+                "type": "formdata",
+                "raw": "",
+                "form": [
+                    {
+                        "name": "S",
+                        "value": "220.68"
+                    },
+                    {
+                        "name": "USD",
+                        "value": "801.66"
+                    },
+                    {
+                        "name": "fechaFactura",
+                        "value": "2/6/23"
+                    },
+                    {
+                        "name": "fechaVencimiento",
+                        "value": "12/6/23"
+                    },
+                    {
+                        "name": "consumoMes",
+                        "value": "Consumo mayo 2023"
+                    }
+                ],
+                "files": [
+                    {
+                        "name": "file1",
+                        "value": "../../../../Downloads/DATA-1-COBRO.xlsx"
+                    },
+                    {
+                        "name": "file2",
+                        "value": "../../../../Downloads/data2.xlsx"
+                    },
+                    {
+                        "name": "file3",
+                        "value": "../../../../Downloads/DATA-3-NOMBRE-ODOO.xlsx"
+                    },
+                    {
+                        "name": "file4",
+                        "value": "../../../../Downloads/DATA-4-DESCUENTOS.xlsx"
+                    },
+                    {
+                        "name": "file5",
+                        "value": "../../../../Downloads/DATA-5-COBROS-EXTRAS.xlsx"
+                    },
+                    {
+                        "name": "file6",
+                        "value": "../../../../Downloads/DATA-6-plantilla factura servicios Chile.xlsx"
+                    }
+                ]
+            },
+            "tests": []
+        }
+    ]
+}
