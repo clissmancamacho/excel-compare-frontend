@@ -1,50 +1,54 @@
-import ExcelJS from "exceljs"
-import { readFiles } from "h3-formidable"
+import ExcelJS from "exceljs" // Esto importa la libreria para manipular excel
+import { readFiles } from "h3-formidable" // Esto importa la librearia para leer archivos
 
+// Esta constante tiene el path de el archivo template de facturacion
 const templateFile = {
   filepath: "server/template/plantilla.xlsx",
 }
 
-let tasaSol = 0
+let tasaSol = 0 // Declaracion de variable que obtiene mas adelante la tasa del sol con respecto al CLP
 let tasaDolar = 0
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(async (event) => { 
   // with fields
-  const { fields, files } = await readFiles(event, {
+  const { fields, files } = await readFiles(event, { // Obteniendo los campos y los archivos que me llegan de la peticion
     includeFields: true,
     // other formidable options here
   })
 
-  const S = fields.S[0]
+  const S = fields.S[0]              //Declaracion de constantes a traves de arreglos que definen los campos del archivo de excel
   const USD = fields.USD[0]
   const fechaFactura = fields.fechaFactura[0]
   const fechaVencimiento = fields.fechaVencimiento[0]
   const consumoMes = fields.consumoMes[0]
 
-  try {
+  try { // Inicia un bloque de manejo de errores
+
+    //Validacion de campos
     if (!S || !USD || !fechaFactura || !fechaVencimiento || !consumoMes) {
       throw new Error(
         "No se encontraron los campos S (tasa soles) o USD (tasa dolár)"
       )
     }
+    //Parseo de tasas
     tasaSol = parseFloat(S)
     tasaDolar = parseFloat(USD)
 
     const companies = {}
-    const worksheets = await getWorksheetsFromFiles(files)
+    const worksheets = await getWorksheetsFromFiles(files) // Obteniendo las hojas de excel
     const data2 = buildData2(worksheets.data2)
     const data3 = buildData3(worksheets.data3)
     const dataExtraCharges = buildDataCobrosExtras(worksheets.data5)
     const dataDiscounts = buildDataDescuentos(worksheets.data4)
 
-    worksheets.data1.eachRow(function (row, rowNumber) {
-      if ([1].includes(rowNumber)) {
+    worksheets.data1.eachRow(function (row, rowNumber) { //Ejecucion para encontrar las columnas correspondientes
+      if ([1].includes(rowNumber)) {                     //y cruzar los valores de las mismas a traves de arreglos
         return
       }
       const values = row.values
       if (values[3] === 0) {
         return
       }
-      let objToPush = {
+      let objToPush = { // se aplica un arreglo de objetos para indicar la columna que queremos cruzar
         country: values[2],
         companyId: values[3],
         companyName: values[4],
@@ -54,13 +58,13 @@ export default defineEventHandler(async (event) => {
         totalChargeVoice: values[16],
         currency: values[18],
       }
-      objToPush["totalCharge"] =
+      objToPush["totalCharge"] =        //se obtiene la totalidad de cada columna realizando un arreglo de objetos
         objToPush.totalChargePlan +
         objToPush.totalChargeOverconsumption +
         objToPush.totalChargeSMS +
         objToPush.totalChargeVoice
 
-      if (objToPush.country !== "Chile (2)") {
+      if (objToPush.country !== "Chile (2)") {  //se aplica condiciones para obtener en este caso
         return
       }
 
