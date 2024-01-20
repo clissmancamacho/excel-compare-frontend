@@ -3,11 +3,12 @@ import { readFiles } from "h3-formidable" // Esto importa la librearia para leer
 
 // Esta constante tiene el path de el archivo template de facturacion
 const templateFile = {
-  filepath: "server/template/plantilla.xlsx",
+  filepath: "server/template/plantilla",
 }
 
 let tasaSol = 0 // Declaracion de variable que obtiene mas adelante la tasa del sol con respecto al CLP
 let tasaDolar = 0
+let tasaMXN = 0
 export default defineEventHandler(async (event) => { 
   // with fields
   const { fields, files } = await readFiles(event, { // Obteniendo los campos y los archivos que me llegan de la peticion
@@ -17,14 +18,16 @@ export default defineEventHandler(async (event) => {
 
   const S = fields.S[0]              //Declaracion de constantes a traves de arreglos que definen los campos del archivo de excel
   const USD = fields.USD[0]
+  const MXN = fields.MXN[0]
   const fechaFactura = fields.fechaFactura[0]
   const fechaVencimiento = fields.fechaVencimiento[0]
   const consumoMes = fields.consumoMes[0]
+  const pais = fields.pais[0]
 
   try { // Inicia un bloque de manejo de errores
 
     //Validacion de campos
-    if (!S || !USD || !fechaFactura || !fechaVencimiento || !consumoMes) {
+    if (!S || !USD || !MXN || !fechaFactura || !fechaVencimiento || !consumoMes || !pais) {
       throw new Error(
         "No se encontraron los campos S (tasa soles) o USD (tasa dolár)"
       )
@@ -32,6 +35,7 @@ export default defineEventHandler(async (event) => {
     //Parseo de tasas
     tasaSol = parseFloat(S)
     tasaDolar = parseFloat(USD)
+    tasaMXN = parseFloat(MXN)
 
     const companies = {}
     const worksheets = await getWorksheetsFromFiles(files) // Obteniendo las hojas de excel
@@ -39,7 +43,7 @@ export default defineEventHandler(async (event) => {
     const data3 = buildData3(worksheets.data3)
     const dataExtraCharges = buildDataCobrosExtras(worksheets.data5)
     const dataDiscounts = buildDataDescuentos(worksheets.data4)
-
+    const paisRow = getNamedPaisRow(pais)
     worksheets.data1.eachRow(function (row, rowNumber) { //Ejecucion para encontrar las columnas correspondientes
       if ([1].includes(rowNumber)) {                     //y cruzar los valores de las mismas a traves de arreglos
         return
@@ -64,12 +68,20 @@ export default defineEventHandler(async (event) => {
         objToPush.totalChargeSMS +
         objToPush.totalChargeVoice
 
-      if (objToPush.country !== "Chile (2)") {  //se aplica condiciones para obtener en este caso
+      if (!paisRow.includes(objToPush.country)) {  //se aplica condiciones para obtener en este caso
         return
       }
 
-      if (objToPush.currency !== "CLP") {
-        objToPush = convertCurrency(objToPush, objToPush.currency)
+      if (pais === 'chile' && objToPush.currency !== "CLP") {
+        objToPush = convertCurrency(objToPush, objToPush.currency, "CLP")
+      }
+
+      else if (pais === 'global' && objToPush.currency !== "USD") {
+        objToPush = convertCurrency(objToPush, objToPush.currency, "USD")
+      }
+
+      else if((pais === 'peruSd' || pais === 'peruCd') && objToPush.currency !== "S") {
+        objToPush = convertCurrency(objToPush, objToPush.currency, "S")
       }
 
       const aditionalData2 = data2[objToPush.companyId]
@@ -103,7 +115,8 @@ export default defineEventHandler(async (event) => {
       companies,
       fechaFactura,
       fechaVencimiento,
-      consumoMes
+      consumoMes,
+      pais
     )
     return companies
   } catch (error) {
@@ -160,8 +173,8 @@ const pushKeyOrAddToExistingKey = (companies, objToPush) => {
   }
 }
 
-const convertCurrency = (objToPush, currency) => {
-  const currencyRate = getCurrencyRate(currency)
+const convertCurrency = (objToPush, currency, baseCurrency) => {
+  const currencyRate = getCurrencyRate(currency, baseCurrency)
   objToPush.totalCharge = customRound(objToPush.totalCharge * currencyRate)
   objToPush.totalChargePlan = customRound(
     objToPush.totalChargePlan * currencyRate
@@ -180,13 +193,24 @@ const convertCurrency = (objToPush, currency) => {
   return objToPush
 }
 
-const getCurrencyRate = (currency) => {
+const getCurrencyRate = (currency, baseCurrency = 'CLP') => {
   const currencies = {
-    CLP: 1,
-    S: tasaSol,
-    USD: tasaDolar,
+    'CLP': {
+      CLP: 1,
+      S: tasaSol,
+      USD: tasaDolar,
+      'MXN $': tasaMXN
+    },
+    'USD': {
+      USD: 1,
+      CLP: 1 / tasaDolar
+    },
+    'S': {
+      S: 1,
+      CLP: 1 / tasaSol
+    }
   }
-  return currencies[currency]
+  return currencies[baseCurrency][currency]
 }
 
 const buildData2 = (data2) => {
@@ -280,21 +304,48 @@ const customRound = (value, decimals = 2) => {
   return parseFloat(value.toFixed(decimals))
 }
 
+const getNamedPaisRow = (pais) => {
+  const namedPais = {
+    'chile': ['Chile (2)'],
+    'ecuador': ['Ecuador (5)'],
+    'mexico': ['MEXICO (8)'],
+    'global': ['Bolivia (44)', 'Brasil (353)', 'Canadá (3740)', 'Colombia (4)', 'Costa Rica (160)', 'Estados Unidos (9)', 'Guatemala (860)', 'Honduras (4141)', 'Nicaragua (4140)', 'Panama (648)', 'Paraguay (1229)', 'Uruguay (667)', 'Venezuela (3224)'],
+    'peruSd' : ['Peru (11)'],
+    'peruCd' : ['Peru (11)']
+  }
+  return namedPais[pais]
+}
+
 const writeRowsInTemplateFile = async (
   companies,
   fechaFactura,
   fechaVencimiento,
-  consumoMes
+  consumoMes, 
+  pais
 ) => {
   const templateWorkbook = new ExcelJS.Workbook()
-  await templateWorkbook.xlsx.readFile(templateFile.filepath)
+  await templateWorkbook.xlsx.readFile(`${templateFile.filepath}_${pais}.xlsx`)
   const template = templateWorkbook.getWorksheet("Hoja1")
 
   const keys = Object.keys(companies)
   for await (const key of keys) {
     const company = companies[key]
-    const rowToWrite = [
-      company.showName || company.fantasyName || company.companyName,
+    let writeCompany = true
+    if(pais === 'peruSd' || pais === 'peruCd') {
+      writeCompany = verifyDetractionPeru(pais, company)
+    }
+    if(writeCompany) {
+      const rowToWrite = getRowToWriteByCountry(pais, company, fechaFactura, fechaVencimiento, consumoMes)
+      template.addRow(rowToWrite)
+    }
+  }
+  await templateWorkbook.xlsx.writeFile("server/template/facturacion.xlsx")
+}
+
+const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, consumoMes) => {
+  if (pais === 'chile') {
+    return [
+      company.fantasyName || company.showName || company.companyName,
       company.odooId,
       fechaFactura,
       fechaVencimiento,
@@ -303,13 +354,118 @@ const writeRowsInTemplateFile = async (
       "__export__.product_product_725_194cd9a3",
       consumoMes,
       1,
-      company.totalCharge,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
       "IVA 19% Vta",
-      company?.discount ? company.discount : 0,
+      0,
       "Conectividad Gestionada",
       "Servicios de Conectividad Gestionada",
     ]
-    template.addRow(rowToWrite)
   }
-  await templateWorkbook.xlsx.writeFile("server/template/facturacion.xlsx")
+  if (pais === 'ecuador') {
+    return [
+      company.fantasyName || company.showName || company.companyName,
+      company.odooId,
+      fechaFactura,
+      fechaVencimiento,
+      "Facturas de cliente",
+      "USD",
+      "Servicios de Conectividad",
+      consumoMes,
+      1,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
+      "l10n_ec.6_tax_vat_411",
+      0,
+      "Conectividad Gestionada",
+      "Debo y pagaré incondicionalmente y sin protesto esta factura a M2M DATAGOBAL LATAM ECUADOR CIA LTDA. El valor de la factura (s) pendiente (s) EN EFECTIVO/DEPOSITO/TRANSFERENCIA A LA CUENTA CORRIENTE BANCO PICHINCHA N° 2100202222 DE M2M DATAGLOBAL. El recibo y retención lo enviare al correo electrónico alejandra.valencia@m2mdataglobal.com. Declaro, que los datos para la generación de la presente factura son verídicos y autorizo en forma expresa a; M2M DATAGLOBAL LATAM ECUADOR CIA LTDA. A Solicitar o publicar toda la información crediticia o de mora en cualquier fuente de información o publicaciones, incluidos los Burós de Crédito legalmente autorizados por la Superintendencia de Compañías y que para gestionar cobros y demás no será requisito que las facturas tengan firma alguna",
+      "Otros con utilización del sistema financiero"
+    ]
+  }
+  if (pais === 'mexico') {
+    return [
+      company.odooId,
+      fechaFactura,
+      "10 Días",
+      "Facturas de cliente",
+      "MXN",
+      "Servicios de Conectividad Gestionada",
+      consumoMes,
+      1,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
+      "l10n_mx.5_tax12",
+      0,
+      "Conectividad Gestionada",
+      "Servicios de Conectividad Gestionada",
+      "Unidades",
+      "Gastos en General",
+      "Por definir"
+    ]
+  }
+  if (pais === 'peruSd') {
+    return [
+      company.odooId,
+      fechaFactura,
+      fechaVencimiento,
+      "PEN",
+      "_export_.product_product_879_a63f9941",
+      consumoMes,
+      1,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
+      "l10n_pe.3_sale_tax_igv_18",
+      0,
+      "Conectividad Gestionada",
+      "Servicios de Conectividad Gestionada",
+      "l10n_pe.document_type01",
+      "Unidades",
+    ]
+  }
+  if (pais === 'peruCd') {
+    return [
+      company.odooId,
+      fechaFactura,
+      fechaVencimiento,
+      "PEN",
+      "_export_.product_product_879_a63f9941",
+      consumoMes,
+      1,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
+      "l10n_pe.3_sale_tax_igv_18",
+      0,
+      "Conectividad Gestionada",
+      "Servicios de Conectividad Gestionada",
+      "l10n_pe.document_type01",
+      "Unidades",
+      "[1001] Operación Sujeta a Detracción"
+    ]
+  }
+  if (pais === 'global') {
+    return [
+      company.fantasyName || company.showName || company.companyName,
+      company.odooId,
+      fechaFactura,
+      fechaVencimiento,
+      "Facturas de cliente",
+      "USD",
+      "_export_.product_product_725_194cd9a3",
+      "Servicios de Conectividad Gestionada consumos de Diciembre 2023",
+      1,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
+      0,
+      "Conectividad Gestionada",
+      "Servicios de Conectividad Gestionada",
+      "Factura de Exportación Electrónica",
+    ]
+  }
+}
+
+const verifyDetractionPeru = (pais, company) => {
+  const totalCharge = company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge
+  let writeCompany = false
+  if(pais === 'peruSd' && totalCharge <= 582) {
+    writeCompany = true
+  }
+  if(pais === 'peruCd' && totalCharge >= 583) 
+  {
+    writeCompany = true
+  }
+  return writeCompany
 }
