@@ -9,6 +9,11 @@ const templateFile = {
 let tasaSol = 0 // Declaracion de variable que obtiene mas adelante la tasa del sol con respecto al CLP
 let tasaDolar = 0
 let tasaMXN = 0
+let tasaCOP_CLP = 0
+let tasaCOP_Sol = 0
+let tasaCOP_Dolar = 0
+let tasaCOP_MXN = 0
+
 export default defineEventHandler(async (event) => { 
   // with fields
   const { fields, files } = await readFiles(event, { // Obteniendo los campos y los archivos que me llegan de la peticion
@@ -19,6 +24,10 @@ export default defineEventHandler(async (event) => {
   const S = fields.S[0]              //Declaracion de constantes a traves de arreglos que definen los campos del archivo de excel
   const USD = fields.USD[0]
   const MXN = fields.MXN[0]
+  const COP_CLP = fields.COP_CLP[0]
+  const COP_SOL = fields.COP_SOL[0]
+  const COP_DOLAR = fields.COP_DOLAR[0]
+  const COP_MXN = fields.COP_MXN[0]
   const fechaFactura = fields.fechaFactura[0]
   const fechaVencimiento = fields.fechaVencimiento[0]
   const consumoMes = fields.consumoMes[0]
@@ -27,7 +36,7 @@ export default defineEventHandler(async (event) => {
   try { // Inicia un bloque de manejo de errores
 
     //Validacion de campos
-    if (!S || !USD || !MXN || !fechaFactura || !fechaVencimiento || !consumoMes || !pais) {
+    if (!S || !USD || !MXN || !COP_CLP || !COP_SOL || !COP_DOLAR || !COP_MXN || !fechaFactura || !fechaVencimiento || !consumoMes || !pais) {
       throw new Error(
         "No se encontraron los campos S (tasa soles) o USD (tasa dolár)"
       )
@@ -36,6 +45,10 @@ export default defineEventHandler(async (event) => {
     tasaSol = parseFloat(S)
     tasaDolar = parseFloat(USD)
     tasaMXN = parseFloat(MXN)
+    tasaCOP_CLP = parseFloat(COP_CLP)
+    tasaCOP_Sol = parseFloat(COP_SOL)
+    tasaCOP_Dolar = parseFloat(COP_DOLAR)
+    tasaCOP_MXN = parseFloat(COP_MXN)
 
     const companies = {}
     const worksheets = await getWorksheetsFromFiles(files) // Obteniendo las hojas de excel
@@ -82,6 +95,10 @@ export default defineEventHandler(async (event) => {
 
       else if((pais === 'peruSd' || pais === 'peruCd') && objToPush.currency !== "S") {
         objToPush = convertCurrency(objToPush, objToPush.currency, "S")
+      }
+
+      else if(pais === 'colombia' && objToPush.currency !== "COP") {
+        objToPush = convertCurrency(objToPush, objToPush.currency, "COP")
       }
 
       const aditionalData2 = data2[objToPush.companyId]
@@ -140,7 +157,7 @@ const getWorksheetsFromFiles = async (files) => {
 }
 
 const getWorksheetNameByData = (index) => {
-  if ([1, 6].includes(index)) return "Hoja1"
+  if ([1, 3, 6].includes(index)) return "Hoja1"
   if (index === 4) return "Descuentos"
   if (index === 5) return "Cobros Extras"
   return "Sheet1"
@@ -189,7 +206,7 @@ const convertCurrency = (objToPush, currency, baseCurrency) => {
   objToPush.totalChargeVoice = customRound(
     objToPush.totalChargeVoice * currencyRate
   )
-  objToPush.currency = "CLP"
+  objToPush.currency = baseCurrency
   return objToPush
 }
 
@@ -208,6 +225,13 @@ const getCurrencyRate = (currency, baseCurrency = 'CLP') => {
     'S': {
       S: 1,
       CLP: 1 / tasaSol
+    },
+    'COP': {
+      COP: 1,
+      CLP: tasaCOP_CLP,
+      S: tasaCOP_Sol,
+      USD: tasaCOP_Dolar,
+      MXN: tasaCOP_MXN
     }
   }
   return currencies[baseCurrency][currency]
@@ -309,9 +333,10 @@ const getNamedPaisRow = (pais) => {
     'chile': ['Chile (2)'],
     'ecuador': ['Ecuador (5)'],
     'mexico': ['MEXICO (8)'],
-    'global': ['Bolivia (44)', 'Brasil (353)', 'Canadá (3740)', 'Colombia (4)', 'Costa Rica (160)', 'Estados Unidos (9)', 'Guatemala (860)', 'Honduras (4141)', 'Nicaragua (4140)', 'Panama (648)', 'Paraguay (1229)', 'Uruguay (667)', 'Venezuela (3224)'],
+    'global': ['Bolivia (44)', 'Brasil (353)', 'Canadá (3740)', 'Costa Rica (160)', 'Estados Unidos (9)', 'Guatemala (860)', 'Honduras (4141)', 'Nicaragua (4140)', 'Panama (648)', 'Paraguay (1229)', 'Uruguay (667)', 'Venezuela (3224)'],
     'peruSd' : ['Peru (11)'],
-    'peruCd' : ['Peru (11)']
+    'peruCd' : ['Peru (11)'],
+    'colombia' : ['Colombia (4)']
   }
   return namedPais[pais]
 }
@@ -453,6 +478,26 @@ const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, c
       "Conectividad Gestionada",
       "Servicios de Conectividad Gestionada",
       "Factura de Exportación Electrónica",
+    ]
+  }
+  if (pais === 'colombia') {
+    return [
+      company.fantasyName || company.showName || company.companyName,
+      company.odooId,
+      fechaFactura,
+      fechaVencimiento,
+      "Facturas de cliente",
+      "COP",
+      "Servicios Conectividad Gestionada",
+      consumoMes,
+      1,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
+      "l10n_co.7_l10n_co_tax_8",
+      0,
+      "Conectividad Gestionada",
+      "",
+      "[0101] Internal sale",
+      "Instrumento no definido",
     ]
   }
 }
