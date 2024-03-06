@@ -13,6 +13,10 @@ let tasaCOP_CLP = 0
 let tasaCOP_Sol = 0
 let tasaCOP_Dolar = 0
 let tasaCOP_MXN = 0
+let tasaARS_Dolar = 0
+let tasaARS_CLP = 0
+let tasaMXN_Dolar = 0
+let facturationType = ''
 
 export default defineEventHandler(async (event) => { 
   // with fields
@@ -28,17 +32,27 @@ export default defineEventHandler(async (event) => {
   const COP_SOL = fields.COP_SOL[0]
   const COP_DOLAR = fields.COP_DOLAR[0]
   const COP_MXN = fields.COP_MXN[0]
+  const ARS_DOLAR = fields.ARS_DOLAR[0]
+  const ARS_CLP = fields.ARS_CLP[0] 
+  const MXN_DOLAR = fields.MXN_DOLAR[0] 
   const fechaFactura = fields.fechaFactura[0]
   const fechaVencimiento = fields.fechaVencimiento[0]
   const consumoMes = fields.consumoMes[0]
   const pais = fields.pais[0]
+  const fType = fields.facturationType[0]
 
   try { // Inicia un bloque de manejo de errores
 
     //Validacion de campos
-    if (!S || !USD || !MXN || !COP_CLP || !COP_SOL || !COP_DOLAR || !COP_MXN || !fechaFactura || !fechaVencimiento || !consumoMes || !pais) {
+    if (!S || !USD || !MXN || !COP_CLP || !COP_SOL || !COP_DOLAR || !COP_MXN || !ARS_DOLAR || !ARS_CLP || !MXN_DOLAR ||!fechaFactura || !fechaVencimiento || !consumoMes || !pais) {
       throw new Error(
         "No se encontraron los campos S (tasa soles) o USD (tasa dolár)"
+      )
+    }
+
+    if(!["Facturable Manual", "Facturable Masivo"].includes(fType)) {
+      throw new Error(
+        "facturationType es invalido"
       )
     }
     //Parseo de tasas
@@ -49,6 +63,10 @@ export default defineEventHandler(async (event) => {
     tasaCOP_Sol = parseFloat(COP_SOL)
     tasaCOP_Dolar = parseFloat(COP_DOLAR)
     tasaCOP_MXN = parseFloat(COP_MXN)
+    tasaARS_Dolar = parseFloat(ARS_DOLAR)
+    tasaARS_CLP = parseFloat(ARS_CLP)
+    tasaMXN_Dolar = parseFloat(MXN_DOLAR)
+    facturationType = fType
 
     const companies = {}
     const worksheets = await getWorksheetsFromFiles(files) // Obteniendo las hojas de excel
@@ -92,6 +110,9 @@ export default defineEventHandler(async (event) => {
       else if (pais === 'global' && objToPush.currency !== "USD") {
         objToPush = convertCurrency(objToPush, objToPush.currency, "USD")
       }
+      else if (pais === 'argentina' && objToPush.currency !== "AR $") {
+        objToPush = convertCurrency(objToPush, objToPush.currency, "AR $")
+      }
 
       else if((pais === 'peruSd' || pais === 'peruCd') && objToPush.currency !== "S") {
         objToPush = convertCurrency(objToPush, objToPush.currency, "S")
@@ -109,7 +130,7 @@ export default defineEventHandler(async (event) => {
         objToPush = { ...objToPush, ...aditionalData2 }
       }
 
-      if (objToPush.facturableType !== "Facturable Masivo") {
+      if (objToPush.facturableType !== facturationType) {
         return
       }
       if (aditionalData3) {
@@ -117,8 +138,12 @@ export default defineEventHandler(async (event) => {
       }
       if (extraCharges) {
         if (objToPush.currency !== extraCharges.currency) {
-          const currencyRate = getCurrencyRate(extraCharges.currency)
+          const currencyRate = getCurrencyRate(extraCharges.currency, objToPush.currency)
           extraCharges.value = customRound(extraCharges.value * currencyRate)
+          extraCharges.currency = objToPush.currency
+          if(objToPush.companyId == 4504) {
+            console.log({extraCharges, objToPush})
+          }
         }
         objToPush["extraCharge"] = extraCharges.value
       }
@@ -220,7 +245,8 @@ const getCurrencyRate = (currency, baseCurrency = 'CLP') => {
     },
     'USD': {
       USD: 1,
-      CLP: 1 / tasaDolar
+      CLP: 1 / tasaDolar,
+      'MXN $': 1 / tasaMXN_Dolar
     },
     'S': {
       S: 1,
@@ -231,8 +257,13 @@ const getCurrencyRate = (currency, baseCurrency = 'CLP') => {
       CLP: tasaCOP_CLP,
       S: tasaCOP_Sol,
       USD: tasaCOP_Dolar,
-      MXN: tasaCOP_MXN
-    }
+      'MXN $': tasaCOP_MXN
+    }, 
+    'AR $': {
+      ARS: 1,
+      USD: tasaARS_Dolar,
+      CLP: tasaARS_CLP
+    },
   }
   return currencies[baseCurrency][currency]
 }
@@ -251,6 +282,8 @@ const buildData2 = (data2) => {
       odooId: values[2],
       facturableType: values[4],
       fantasyName: values[5],
+      data2Name: values[6],
+      consumer: values[16] 
     }
   })
   return data
@@ -333,10 +366,11 @@ const getNamedPaisRow = (pais) => {
     'chile': ['Chile (2)'],
     'ecuador': ['Ecuador (5)'],
     'mexico': ['MEXICO (8)'],
-    'global': ['Bolivia (44)', 'Brasil (353)', 'Canadá (3740)', 'Costa Rica (160)', 'Estados Unidos (9)', 'Guatemala (860)', 'Honduras (4141)', 'Nicaragua (4140)', 'Panama (648)', 'Paraguay (1229)', 'Uruguay (667)', 'Venezuela (3224)'],
+    'global': ['Bolivia (44)', 'Brasil (353)', 'Canadá (3740)', 'Costa Rica (160)', 'Estados Unidos (9)', 'Guatemala (860)', 'Honduras (4141)', 'Nicaragua (4140)', 'Panama (648)', 'Paraguay (1229)', 'Uruguay (667)', 'Venezuela (3224)', 'Colombia (4)'],
     'peruSd' : ['Peru (11)'],
     'peruCd' : ['Peru (11)'],
-    'colombia' : ['Colombia (4)']
+    'colombia' : ['Colombia (4)'],
+    'argentina' : ['Argentina M2M (14)']
   }
   return namedPais[pais]
 }
@@ -401,8 +435,7 @@ const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, c
       "l10n_ec.6_tax_vat_411",
       0,
       "Conectividad Gestionada",
-      "Debo y pagaré incondicionalmente y sin protesto esta factura a M2M DATAGOBAL LATAM ECUADOR CIA LTDA. El valor de la factura (s) pendiente (s) EN EFECTIVO/DEPOSITO/TRANSFERENCIA A LA CUENTA CORRIENTE BANCO PICHINCHA N° 2100202222 DE M2M DATAGLOBAL. El recibo y retención lo enviare al correo electrónico alejandra.valencia@m2mdataglobal.com. Declaro, que los datos para la generación de la presente factura son verídicos y autorizo en forma expresa a; M2M DATAGLOBAL LATAM ECUADOR CIA LTDA. A Solicitar o publicar toda la información crediticia o de mora en cualquier fuente de información o publicaciones, incluidos los Burós de Crédito legalmente autorizados por la Superintendencia de Compañías y que para gestionar cobros y demás no será requisito que las facturas tengan firma alguna",
-      "Otros con utilización del sistema financiero"
+      "Debo y pagaré incondicionalmente y sin protesto esta factura a M2M DATAGOBAL LATAM ECUADOR CIA LTDA. El valor de la factura (s) pendiente (s) EN EFECTIVO/DEPOSITO/TRANSFERENCIA A LA CUENTA CORRIENTE BANCO PICHINCHA N° 2100202222 DE M2M DATAGLOBAL. El recibo y retención lo enviare al correo electrónico alejandra.valencia@m2mdataglobal.com. Declaro, que los datos para la generación de la presente factura son verídicos y autorizo en forma expresa a; M2M DATAGLOBAL LATAM ECUADOR CIA LTDA. A Solicitar o publicar toda la información crediticia o de mora en cualquier fuente de información o publicaciones, incluidos los Burós de Crédito legalmente autorizados por la Superintendencia de Compañías y que para gestionar cobros y demás no será requisito que las facturas tengan firma alguna"
     ]
   }
   if (pais === 'mexico') {
@@ -412,7 +445,7 @@ const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, c
       "10 Días",
       "Facturas de cliente",
       "MXN",
-      "Servicios de Conectividad Gestionada",
+      "Servicios Conectividad Gestionada",
       consumoMes,
       1,
       company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
@@ -421,8 +454,7 @@ const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, c
       "Conectividad Gestionada",
       "Servicios de Conectividad Gestionada",
       "Unidades",
-      "Gastos en General",
-      "Por definir"
+      "Gastos en General"
     ]
   }
   if (pais === 'peruSd') {
@@ -431,7 +463,7 @@ const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, c
       fechaFactura,
       fechaVencimiento,
       "PEN",
-      "_export_.product_product_879_a63f9941",
+      "__export__.product_product_879_a63f9941",
       consumoMes,
       1,
       company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
@@ -470,8 +502,8 @@ const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, c
       fechaVencimiento,
       "Facturas de cliente",
       "USD",
-      "_export_.product_product_725_194cd9a3",
-      "Servicios de Conectividad Gestionada consumos de Diciembre 2023",
+      "__export__.product_product_725_194cd9a3",
+      "Servicios de Conectividad Gestionada consumos de Febrero 2024",
       1,
       company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
       0,
@@ -498,6 +530,24 @@ const getRowToWriteByCountry = (pais, company, fechaFactura, fechaVencimiento, c
       "",
       "[0101] Internal sale",
       "Instrumento no definido",
+    ]
+  }
+  if (pais === 'argentina') {
+    return [
+      company.data2Name,
+      fechaFactura,
+      fechaVencimiento,
+      "Factura Electrónica",
+      company.consumer === 'Consumidor Final' ? "FACTURAS B" : "FACTURAS A",
+      "ARS",
+      "Servicios M2M",
+      consumoMes,
+      1,
+      company?.discount ? customRound(company.totalCharge - company.discount) : company.totalCharge,
+      "l10n_ar.4_ri_tax_vat_21_ventas",
+      "",
+      "Conectividad Gestionada",
+      "",
     ]
   }
 }
